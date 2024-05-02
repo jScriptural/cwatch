@@ -1,16 +1,8 @@
 /************************************************
  * @file cwatch.c
  * @brief watch for changes in file(s)
- * @synopsis:
- *           cwatch [-f "file1:file2:...:filen" [-d "dir1:dir2:...:dirn"] [-e "js:html"]] -c "command"
- *
- *  options:
- *  -f : a colon separated filenames to watch. Either -f or -d must be specify or both can be specify.if -f is specified,`file1` must be the entry point for the project/app. `command` will be pasaed the file1 whenever change is detected.
- *  -d : a colon separated directories to watch.
- *  Either -f or -d must be specify or both can be specify.
- *  -e : Used with -d to selectively watch files with the specify extensions in the directory given to -d.
- *  -c : specify the command to run if a file changes.
- *
+ * @author Isonguyo John <isonguyojohndeveloper@gmail.com
+ * @docs <https://gitub.com/jscripture/cwatch/README.md>
  *
  ************************************************/
 
@@ -33,15 +25,13 @@ char *d =NULL;
 char *e = NULL;
 char *c = NULL;
 
-const char *extname (const char *filename);
 void *routine(void *arg);
-void err_msg(const char *msg,int exit);
 
 int main(int argc, char *argv[])
 {
-  setvbuf(stdout,NULL,0,_IONBF);
-  setvbuf(stderr,NULL,0,_IONBF);
-  setvbuf(stdin,NULL,0,_IONBF);
+  setvbuf(stdout,NULL,_IONBF,0);
+  setvbuf(stderr,NULL,_IONBF,0);
+  setvbuf(stdin,NULL,_IONBF,0);
 
   int opt;
   opterr = 0;
@@ -66,8 +56,6 @@ int main(int argc, char *argv[])
     }
   }//while(getopt)
 
- // printf("f=%s,d=%s,e=%s,c=%s\n",f,d,e,c);
-
   if(f)
   {
     char *file = strtok(f,":");
@@ -87,10 +75,6 @@ int main(int argc, char *argv[])
     }//while(file);
 
   }//if(f)
-
-  /*for(int i =0; i < filecount; ++i)
-    printf("files[%d] = %s\n",i, files[i]);*/
-
 
   if(e)
   {
@@ -127,7 +111,6 @@ int main(int argc, char *argv[])
 	strncat(file,entry->d_name,BUFSIZ-strlen(file));
 
 
-	//printf("file = %s\n", file);
 	if(stat(file,&sts) < 0)
 	  err_msg(strerror(errno),1);
 
@@ -157,19 +140,16 @@ int main(int argc, char *argv[])
 
   }//if(d)
   
-
-  /*printf("\033[1;35m[cwatch]\nWatching\033[0m: ");
-  for(int i =0; i < filecount; ++i)
-    printf("%s, ",files[i]);
-  printf("\n\n");*/
-  
   if(filecount <= 0 || c == NULL)
     err_msg("NO file to watch",1);
 
   char buffer[MSGMAX]={0};
   strcpy(buffer,"\033[1;35m[cwatch]\nWatching:\033[0m ");
   for(int i =0; i < filecount; ++i)
+  {
+    i != 0 &&  strcat(buffer,",");
     strcat(buffer,files[i]);
+  }
   strcat(buffer,"\n\n");
 
   write(STDOUT_FILENO,buffer,strlen(buffer));
@@ -190,63 +170,55 @@ int main(int argc, char *argv[])
 
 
 
-const char *extname(const char *filename)
-{
-  const char *dot;
-  char *tmp = strdup(filename);
-  char *p = basename(tmp);
-
-  if(( dot = strrchr(p,'.')) == NULL)
-    return NULL;
-
-  free(tmp);
-  return ++dot;
-}
 
 void *routine(void *arg)
 {
   char *file =  (char *) arg;
   char *entpt = files[0];
-  //pid_t pid;
   struct stat fdata;
   struct timespec mtim;
 
-  printf("tid: %ld, file: %s\n",(long)pthread_self(),file);
+  //get current file modification time
   if(stat(file,&fdata) < 0)
     err_msg(strerror(errno),1);
-
   mtim = fdata.st_mtim;
+
+  //check for changes
   while(true)
   {
     memset(&fdata,0,sizeof(fdata));
+    //continue if the inode changes 
     if(stat(file,&fdata) < 0)
       continue;
 
     if(mtim.tv_sec != fdata.st_mtime || mtim.tv_nsec != fdata.st_mtime_nsec)
     {
+      //update the modification time
       mtim =  fdata.st_mtim;
 
-      printf("pid: %ld\n",(long)pid);
-
       pthread_mutex_lock(&mpid);
+      /*if process was already running,
+       * kill it before restart to avoid 
+       * conflict especially with server 
+       * programs
+       */
       pid > 0 &&  kill(pid,SIGKILL);
       if((pid = fork()) < 0)
       {
 	perror("fork");
+	//Try again on next chnage
 	continue;
 
       }//if(fork);
       else if(pid == 0)
       {
-	printf("inside child\n");
 	if(execl(c,basename(strdup(c)),entpt,(char *)0) < 0)
-	  err_msg(strerror(errno),0);
+	  err_msg(strerror(errno),1);
 
-	exit(EXIT_FAILURE);
       }//if(pid);
+
       pthread_mutex_unlock(&mpid);
 
-      printf("%ld CONTINUES\n\n",(long)pthread_self());
     }//if(mtv_s);
 
   }//while(true); 
@@ -254,13 +226,3 @@ void *routine(void *arg)
 }
 
 
-void err_msg(const char *msg,int quit)
-{
-  char msgbuf[MSGMAX];
-  strcpy(msgbuf,"\033[1;35m[cwatch]\n\033[1;31m");
-  strcat(msgbuf,msg);
-  strcat(msgbuf,"\033[0m\n");
-  write(STDERR_FILENO,msgbuf,strlen(msgbuf));
-  if(quit)
-    exit(EXIT_FAILURE);   
-}

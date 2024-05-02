@@ -1,0 +1,15 @@
+#!/bin/bash 
+
+##compile the program
+make && make clean
+
+## if compilation fails print error
+if [ $? -ne 0 ]; then
+  echo -e 'program `make` not found\r\nPlease install `make`' &>2
+  exit 1;
+fi
+
+## move executable to last directory in $PATH
+mv cwatch ${PATH##*:}
+
+
