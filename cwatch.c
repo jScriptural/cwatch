@@ -26,6 +26,9 @@ char *e = NULL;
 char *c = NULL;
 
 void *routine(void *arg);
+void loadfilesfromdirs(char *dir[],int *dirc,char *fil[],int *filc);
+void loadfiles(char *fil[],int *filc);
+
 
 int main(int argc, char *argv[])
 {
@@ -57,88 +60,18 @@ int main(int argc, char *argv[])
   }//while(getopt)
 
   if(f)
-  {
-    char *file = strtok(f,":");
-    struct stat  fdata;
-    if(stat(file,&fdata) < 0)
-      err_msg(strerror(errno),1);
-    if(S_ISREG(fdata.st_mode))
-      files[filecount++] = strdup(file); 
+    loadfiles(files,&filecount);
 
-    while((file = strtok(NULL,":")) != NULL && filecount < MAXFILEWATCH)
-    {
-      memset(&fdata,0,sizeof(fdata));
-      if(stat(file,&fdata) < 0)
-	err_msg(strerror(errno),1);
-      if(S_ISREG(fdata.st_mode))
-	files[filecount++] = strdup(file); 
-    }//while(file);
-
-  }//if(f)
 
   if(e)
   {
     extensions[extcount++] = strtok(e,":");
     while((extensions[extcount] = strtok(NULL,":")) != NULL && extcount < MAXEXTWATCH)
       ++extcount;
-
   }//if(e)
 
-
   if(d)
-  {
-    DIR *dir;
-    struct dirent *entry;
-    struct stat sts;
-    char file[BUFSIZ];
-
-    directories[dircount++] = strtok(d,":");
-    while((directories[dircount] = strtok(NULL,":")) != NULL && dircount < MAXDIRWATCH)
-      ++dircount;
-
-    for(int i=0; i < dircount; ++i)
-    {
-      char *dp = directories[i];
-
-      if((dir = opendir(dp)) == NULL)
-	err_msg(strerror(errno),1);
-
-      while((entry = readdir(dir)) != NULL && filecount < MAXFILEWATCH)
-      {
-	memset(file,0,sizeof(file));
-	strncpy(file,dp,sizeof(file));
-	strcat(file,"/");
-	strncat(file,entry->d_name,BUFSIZ-strlen(file));
-
-
-	if(stat(file,&sts) < 0)
-	  err_msg(strerror(errno),1);
-
-	if(S_ISREG(sts.st_mode))
-	{
-	  if(!e)
-	    files[filecount++] = strdup(file);
-
-	  const char *ext = extname(file);
-	  char **p = extensions;
-
-	  for(;*p != NULL; ++p)
-	  {
-	    if(!strcmp(*p,ext))
-	    {
-	      files[filecount++] = strdup(file);
-	      break;
-	    }//if(!strcmp)
-
-	  }//for(p!=null)
-
-	}//if(S_ISREG)
-
-      }//while(readdir)
-
-    }//for(dircount)
-
-  }//if(d)
+    loadfilesfromdirs(directories,&dircount,files,&filecount);
   
   if(filecount <= 0 || c == NULL)
     err_msg("NO file to watch",1);
@@ -165,6 +98,7 @@ int main(int argc, char *argv[])
 
   //pause();
   pthread_exit(NULL);
+  //
   
 }//main
 
@@ -226,3 +160,85 @@ void *routine(void *arg)
 }
 
 
+void loadfilesfromdirs(char *dr[],int *dc,char *fl[],int *fc)
+{
+    DIR *dir;
+    struct dirent *entry;
+    struct stat sts;
+    char file[FILENAME_MAX];
+
+   // printf("d: %s\n",d);
+    dr[(*dc)++] = strtok(d,":");
+    while((dr[*dc] = strtok(NULL,":")) != NULL && *dc < MAXDIRWATCH)
+      ++(*dc);
+
+   /* printf("dc: %d\n",*dc);
+    for(int i=0; i < *dc; ++i)
+      printf("dir[%d]: %s\n",i,dr[i]);*/
+
+    for(char **dp = dr; *dp != NULL; ++dp)
+    {
+      //char *dp = dr[i];
+      //printf("dir: %s\n",*dp);
+
+      if((dir = opendir(*dp)) == NULL)
+	err_msg(strerror(errno),1);
+
+      while((entry = readdir(dir)) != NULL && *fc < MAXFILEWATCH)
+      {
+	memset(file,0,sizeof(file));
+	strncpy(file,*dp,sizeof(file));
+	strcat(file,"/");
+	strncat(file,entry->d_name,FILENAME_MAX-strlen(file));
+
+	//printf("file: %s\n",file);
+
+	if(stat(file,&sts) < 0)
+	  err_msg(strerror(errno),1);
+	
+	//printf("filecount: %d\n",*fc);
+
+	if(S_ISREG(sts.st_mode))
+	{
+	  if(!e)
+	    fl[(*fc)++] = strdup(file);
+
+	  const char *ext = extname(file);
+	  char **p = extensions;
+
+	  for(;*p != NULL; ++p)
+	  {
+	    if(!strcmp(*p,ext))
+	    {
+	      fl[(*fc)++] = strdup(file);
+	      break;
+	    }//if(!strcmp)
+
+	  }//for(p!=null)
+
+	}//if(S_ISREG)
+
+      }//while(readdir)
+
+    }//for(dc)
+}
+
+void loadfiles(char *fl[],int *fc)
+{
+    char *file = strtok(f,":");
+    struct stat  fdata;
+    if(stat(file,&fdata) < 0)
+      err_msg(strerror(errno),1);
+    if(S_ISREG(fdata.st_mode))
+      fl[(*fc)++] = strdup(file); 
+
+    while((file = strtok(NULL,":")) != NULL && *fc < MAXFILEWATCH)
+    {
+      memset(&fdata,0,sizeof(fdata));
+      if(stat(file,&fdata) < 0)
+	err_msg(strerror(errno),1);
+      if(S_ISREG(fdata.st_mode))
+	fl[(*fc)++] = strdup(file); 
+    }//while(file);
+
+}

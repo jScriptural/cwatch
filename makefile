@@ -11,6 +11,8 @@ $(EXEC) : $(OBJ)
 	$(CC)  $(CFLAGS) $(OBJ) -o $(EXEC)
 
 
+
+
 clean :
 	rm $(OBJ)
 
