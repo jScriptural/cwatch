@@ -125,7 +125,7 @@ void *routine(void *arg)
     if(stat(file,&fdata) < 0)
       continue;
 
-    if(mtim.tv_sec != fdata.st_mtime || mtim.tv_nsec != fdata.st_mtime_nsec)
+    if(mtim.tv_sec != fdata.st_mtim.tv_sec || mtim.tv_nsec != fdata.st_mtim.tv_nsec)
     {
       //update the modification time
       mtim =  fdata.st_mtim;
