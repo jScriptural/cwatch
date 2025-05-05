@@ -28,13 +28,18 @@ char *c = NULL;
 void *routine(void *arg);
 void loadfilesfromdirs(char *dir[],int *dirc,char *fil[],int *filc);
 void loadfiles(char *fil[],int *filc);
-
+void sigchldhandler(int signo);
 
 int main(int argc, char *argv[])
 {
   setvbuf(stdout,NULL,_IONBF,0);
   setvbuf(stderr,NULL,_IONBF,0);
   setvbuf(stdin,NULL,_IONBF,0);
+  if(signal(SIGCHLD,sigchldhandler)==SIG_ERR)
+  {
+    perror("signal");
+    exit(EXIT_FAILURE);
+  }
 
   int opt;
   opterr = 0;
@@ -111,6 +116,7 @@ void *routine(void *arg)
   char *entpt = files[0];
   struct stat fdata;
   struct timespec mtim;
+
 
   //get current file modification time
   if(stat(file,&fdata) < 0)
@@ -241,4 +247,11 @@ void loadfiles(char *fl[],int *fc)
 	fl[(*fc)++] = strdup(file); 
     }//while(file);
 
+}
+
+
+void sigchldhandler(int signo)
+{
+  int status;
+  wait(&status);
 }

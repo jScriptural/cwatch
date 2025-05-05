@@ -13,6 +13,7 @@
 #include <errno.h>
 #include <sys/wait.h>
 #include <libgen.h>
+#include <signal.h>
 
 #define MAXFILEWATCH 50
 #define MAXDIRWATCH 5
