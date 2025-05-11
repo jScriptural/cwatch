@@ -8,96 +8,96 @@
 
 
 #include "cwatch.h"
+#include "utils.h"
 
-char *files[MAXFILEWATCH];
+char *files[MAXFILEWATCH] = {0};
 int filecount = 0;
-char *directories[MAXDIRWATCH];
+
+char *directories[MAXDIRWATCH] = {0};
 int dircount = 0;
-char *extensions[MAXEXTWATCH];
+
+char *extensions[MAXEXTWATCH] = {0};
 int extcount = 0;
 
 pid_t pid = -1;
 pthread_mutex_t mpid = PTHREAD_MUTEX_INITIALIZER;
 
 
-char *f=NULL;
-char *d =NULL;
+char *f = NULL;
+char *d = NULL;
 char *e = NULL;
 char *c = NULL;
 
-void *routine(void *arg);
-void loadfilesfromdirs(char *dir[],int *dirc,char *fil[],int *filc);
-void loadfiles(char *fil[],int *filc);
-void sigchldhandler(int signo);
+void *thread_routine(void *arg);
+
+void load_files_from_dirs(char *dir[],int *dirc,char *fil[],int *filc);
+void load_files(char *fil[],int *filc);
+void sigchld_handler(int signo);
 
 int main(int argc, char *argv[])
 {
+  char buffer[MSGMAX]={0};
+
+  //Disable buffering for standard I/O 
   setvbuf(stdout,NULL,_IONBF,0);
   setvbuf(stderr,NULL,_IONBF,0);
   setvbuf(stdin,NULL,_IONBF,0);
-  if(signal(SIGCHLD,sigchldhandler)==SIG_ERR)
+
+
+  //NO Zombies allowed 
+  if(signal(SIGCHLD,sigchld_handler)==SIG_ERR)
   {
     perror("signal");
     exit(EXIT_FAILURE);
   }
 
-  int opt;
-  opterr = 0;
+  //process commandline options
+  get_options(argc,argv,"f:d:e:c:");
 
-  while((opt=getopt(argc,argv,"f:d:e:c:")) != -1)
-  {
-    switch(opt)
-    {
-      case 'f':
-	f=optarg;
-	break;
-      case 'd':
-	d=optarg;
-	break;
-      case 'e':
-	e=optarg;
-	break;
-      case 'c':
-	c=optarg;
-	break;
-
-    }
-  }//while(getopt)
-
-  if(f)
-    loadfiles(files,&filecount);
+  if(f != NULL)
+    load_files(files,&filecount);
 
 
-  if(e)
+  if(e != NULL)
   {
     extensions[extcount++] = strtok(e,":");
     while((extensions[extcount] = strtok(NULL,":")) != NULL && extcount < MAXEXTWATCH)
       ++extcount;
   }//if(e)
+   
 
-  if(d)
-    loadfilesfromdirs(directories,&dircount,files,&filecount);
+  if(d != NULL)
+    load_files_from_dirs(directories,&dircount,files,&filecount);
   
-  if(filecount <= 0 || c == NULL)
+
+  if(filecount <= 0)
     err_msg("NO file to watch",1);
 
-  char buffer[MSGMAX]={0};
+  if(c == NULL)
+    err_msg("cwatch: No command to run",1);
+
+
+
+
+  //write to stdout the files being watched
   strcpy(buffer,"\033[1;35m[cwatch]\nWatching:\033[0m ");
   for(int i =0; i < filecount; ++i)
   {
-    i != 0 &&  strcat(buffer,",");
+    if(i != 0)
+      strcat(buffer,",");
+
     strcat(buffer,files[i]);
   }
   strcat(buffer,"\n\n");
-
   write(STDOUT_FILENO,buffer,strlen(buffer));
+
+  //spawn a thread to watch each file 
+  //for modification.
   for(int i = 0; i < filecount; ++i)
   {
     pthread_t tid;
-    pthread_create(&tid,NULL,routine,(void*)files[i]);
+    pthread_create(&tid,NULL,thread_routine,(void*)files[i]);
     pthread_detach(tid);
-    if(i >= filecount )
-      write(STDOUT_FILENO,buffer,strlen(buffer));
   }//for(filecount)
 
 
@@ -110,7 +110,7 @@ int main(int argc, char *argv[])
 
 
 
-void *routine(void *arg)
+void *thread_routine(void *arg)
 {
   char *file =  (char *) arg;
   char *entpt = files[0];
@@ -128,7 +128,7 @@ void *routine(void *arg)
   {
     memset(&fdata,0,sizeof(fdata));
     //continue if the inode changes 
-    if(stat(file,&fdata) < 0)
+    if(lstat(file,&fdata) < 0)
       continue;
 
     if(mtim.tv_sec != fdata.st_mtim.tv_sec || mtim.tv_nsec != fdata.st_mtim.tv_nsec)
@@ -142,7 +142,9 @@ void *routine(void *arg)
        * conflict especially with server 
        * programs
        */
-      pid > 0 &&  kill(pid,SIGKILL);
+      if(pid > 0)
+	kill(pid,SIGKILL);
+
       if((pid = fork()) < 0)
       {
 	perror("fork");
@@ -152,7 +154,7 @@ void *routine(void *arg)
       }//if(fork);
       else if(pid == 0)
       {
-	if(execl(c,basename(strdup(c)),entpt,(char *)0) < 0)
+	if(execlp(c,basename(strdup(c)),entpt,(char *)0) < 0)
 	  err_msg(strerror(errno),1);
 
       }//if(pid);
@@ -166,31 +168,26 @@ void *routine(void *arg)
 }
 
 
-void loadfilesfromdirs(char *dr[],int *dc,char *fl[],int *fc)
+void load_files_from_dirs(char *dr[],int *dc,char *fl[],int *fc)
 {
     DIR *dir;
     struct dirent *entry;
     struct stat sts;
     char file[FILENAME_MAX];
 
-   // printf("d: %s\n",d);
     dr[(*dc)++] = strtok(d,":");
-    while((dr[*dc] = strtok(NULL,":")) != NULL && *dc < MAXDIRWATCH)
+
+    while(*dc < MAXDIRWATCH && (dr[*dc] = strtok(NULL,":")) != NULL)
       ++(*dc);
 
-   /* printf("dc: %d\n",*dc);
-    for(int i=0; i < *dc; ++i)
-      printf("dir[%d]: %s\n",i,dr[i]);*/
 
     for(char **dp = dr; *dp != NULL; ++dp)
     {
-      //char *dp = dr[i];
-      //printf("dir: %s\n",*dp);
 
       if((dir = opendir(*dp)) == NULL)
 	err_msg(strerror(errno),1);
 
-      while((entry = readdir(dir)) != NULL && *fc < MAXFILEWATCH)
+      while(*fc < MAXFILEWATCH && (entry = readdir(dir)) != NULL)
       {
 	memset(file,0,sizeof(file));
 	strncpy(file,*dp,sizeof(file));
@@ -199,20 +196,27 @@ void loadfilesfromdirs(char *dr[],int *dc,char *fl[],int *fc)
 
 	//printf("file: %s\n",file);
 
-	if(stat(file,&sts) < 0)
+	if(lstat(file,&sts) < 0)
 	  err_msg(strerror(errno),1);
 	
 	//printf("filecount: %d\n",*fc);
 
 	if(S_ISREG(sts.st_mode))
 	{
-	  if(!e)
+
+	  char **p = extensions;
+	  char ext[FILENAME_MAX] = {0};
+	  get_extension(file,ext,FILENAME_MAX);
+
+	  //if no -e option was provided
+	  //watch all regular files from the
+	  //directories specified
+	  if(e == NULL)
 	    fl[(*fc)++] = strdup(file);
 
-	  const char *ext = extname(file);
-	  char **p = extensions;
-
-	  for(;*p != NULL; ++p)
+	  //else only watch files with the 
+	  //provided extension
+	  for(;*p != NULL && ext[0] != '\0'; ++p)
 	  {
 	    if(!strcmp(*p,ext))
 	    {
@@ -229,7 +233,7 @@ void loadfilesfromdirs(char *dr[],int *dc,char *fl[],int *fc)
     }//for(dc)
 }
 
-void loadfiles(char *fl[],int *fc)
+void load_files(char *fl[],int *fc)
 {
     char *file = strtok(f,":");
     struct stat  fdata;
@@ -250,8 +254,9 @@ void loadfiles(char *fl[],int *fc)
 }
 
 
-void sigchldhandler(int signo)
+void sigchld_handler(int signo)
 {
-  int status;
-  wait(&status);
+  //Wait for terminated child process
+  //so they do not become zombies.
+  waitpid(-1, NULL, 0);
 }
